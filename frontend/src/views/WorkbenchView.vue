@@ -48,7 +48,10 @@
       <tbody>
         <tr v-for="row in rows" :key="String(row.id)" :data-testid="`row-${row.id}`" :data-status="String(row.status)">
           <td v-for="column in meta.fields" :key="column">{{ row[column] ?? '—' }}</td>
-          <td>{{ row.status }}</td>
+          <td>
+            {{ row.status }}
+            <span v-if="row.abnormal" class="abnormal-tag" data-testid="abnormal-tag">异常草稿·仅供追查</span>
+          </td>
           <td class="row-actions">
             <button
               v-for="action in meta.actions"
@@ -74,8 +77,12 @@
       <form class="modal" @submit.prevent="submitCreate">
         <h3>登记{{ meta.entity }}</h3>
         <label v-for="field in meta.fields" :key="field" class="create-field">
-          <span>{{ field }}</span>
-          <input v-model="createValues[field]" :data-testid="`create-${field}`" required />
+          <span>{{ field }}{{ requiredFields.includes(field) ? '' : '（选填）' }}</span>
+          <input
+            v-model="createValues[field]"
+            :data-testid="`create-${field}`"
+            :required="requiredFields.includes(field)"
+          />
         </label>
         <div class="page-actions">
           <button class="btn" type="button" @click="showCreate = false">取消</button>
@@ -107,6 +114,8 @@ import type { EntryRow } from '@/data/types'
 
 const props = defineProps<{ moduleKey: string }>()
 const meta = moduleMeta(props.moduleKey)
+// 后端 REQUIRED_FIELDS 均为各模块前三个字段；选填项（如子图探查的“结果数量”）允许留空登记。
+const requiredFields = computed(() => meta.requiredFields ?? meta.fields.slice(0, 3))
 const rows = ref<EntryRow[]>([])
 const total = ref(0)
 const errorMessage = ref('')

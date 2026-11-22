@@ -11,7 +11,7 @@ class GraphSearchService(BaseModuleService):
     MODULE = "graph_search"
     ENTITY = "搜索模板"
     OPERATION_TERM = "查询"
-    LIST_FIELDS = ["模板编号", "搜索类型", "查询语法", "起始实体", "关系过滤", "跳数上限", "排序规则", "使用频次"]
+    LIST_FIELDS = ["模板编号", "搜索类型", "查询语法", "起始实体", "关系过滤", "跳数上限", "排序规则", "使用频次", "探查结论", "来源配置", "交接状态"]
     REQUIRED_FIELDS = ["模板编号", "搜索类型", "查询语法"]
     STATUS_ORDER = ["草稿", "已发布", "性能告警", "已停用"]
     ACTION_RULES = {"发布模板": "已发布", "标记告警": "性能告警", "停用模板": "已停用"}
@@ -68,11 +68,46 @@ class GraphSearchService(BaseModuleService):
             "结果数量": 15,
             "缓存策略": "auto-warm",
             "上次探查": "2026-11-18",
+            "交接状态": "未交接",
         }
         sub_rows.append(sb_entry)
         return f"已生成子图探查配置 {sb_entry['配置编号']}"
 
+    # ===== 读取子图探查交接过来的空子图与检索草稿 =====
+    def subgraph_drafts(self, *, include_abnormal: bool = False) -> list[dict[str, Any]]:
+        """返回子图探查交接的搜索草稿，并标明可采用的种子与过滤。
+
+        缺值（数量未取得）与显式 0（空子图）都保留为可续做的正常草稿；
+        异常重复草稿默认隐藏，仅在追查时通过 include_abnormal 打开。
+        """
+        drafts: list[dict[str, Any]] = []
+        for row in store.rows(self.MODULE):
+            if row.get("来源模块") != "subgraph_exp":
+                continue
+            if row.get("abnormal") and not include_abnormal:
+                continue
+            drafts.append({
+                "模板编号": row.get("模板编号", ""),
+                "可采用种子": str(row.get("起始实体", "")),
+                "可采用过滤": str(row.get("关系过滤", "")),
+                "跳数上限": str(row.get("跳数上限", "")),
+                "探查结论": row.get("探查结论", ""),
+                "交接状态": row.get("交接状态", ""),
+                "来源配置": row.get("来源配置", ""),
+                "abnormal": bool(row.get("abnormal")),
+            })
+        return drafts
+
+    def confirmed_empty_subgraphs(self) -> list[dict[str, Any]]:
+        """已确认显式 0 的空子图草稿：可直接运行并产出真正的空结果。"""
+        return [
+            row for row in self.subgraph_drafts()
+            if str(row.get("探查结论", "")).startswith("已确认空结果")
+        ]
+
     def domain_snapshot(self) -> dict[str, Any]:
         base = super().domain_snapshot()
         base["cross_module_consumers"] = ["query_cache", "subgraph_exp"]
+        base["subgraph_drafts"] = len(self.subgraph_drafts())
+        base["confirmed_empty_subgraphs"] = len(self.confirmed_empty_subgraphs())
         return base
